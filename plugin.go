@@ -3,6 +3,8 @@ package main
 import (
 	"crypto/tls"
 	"fmt"
+	"github.com/BurntSushi/toml"
+	log "github.com/Sirupsen/logrus"
 	dockerapi "github.com/docker/docker/api"
 	dockerclient "github.com/docker/engine-api/client"
 	"github.com/docker/go-plugins-helpers/authorization"
@@ -44,6 +46,20 @@ type novolume struct {
 	client *dockerclient.Client
 }
 
+/***********************************
+* TOML corresponding structures
+***********************************/
+
+type container struct {
+	Name string
+}
+
+type containers struct {
+	Container []container
+}
+
+/**** END TOML structures ****/
+
 func (p *novolume) AuthZReq(req authorization.Request) authorization.Response {
 	ruri, err := url.QueryUnescape(req.RequestURI)
 	if err != nil {
@@ -55,10 +71,27 @@ func (p *novolume) AuthZReq(req authorization.Request) authorization.Response {
 		if len(res) < 1 {
 			return authorization.Response{Err: "unable to find container name"}
 		}
+
+		/* Read the TOML configuration file */
+		var cnames containers
+		if _, err := toml.DecodeFile("/home/vagrant/config.toml", &cnames); err != nil {
+			log.Info(cnames)
+			//return authorization.Response{Err: err.Error()}
+		}
+
 		/* Inspect container */
 		container, err := p.client.ContainerInspect(res[1])
 		if err != nil {
 			return authorization.Response{Err: err.Error()}
+		}
+
+		log.Info("Container name: " + container.Name[1:])
+
+		for _, c := range cnames.Container {
+			if container.Name[1:] == c.Name {
+				log.Info("Exception done for " + c.Name + " , container in the whitelist file")
+				return authorization.Response{Allow: true}
+			}
 		}
 
 		/* Check running container user (if its not ROOT) */
